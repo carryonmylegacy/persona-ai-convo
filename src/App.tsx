@@ -18,34 +18,43 @@ function App() {
   const [progressPercentage, setProgressPercentage] = useState(0);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-
-      if (currentUser) {
-        const adminStatus = await checkIsAdmin();
-        setIsAdmin(adminStatus);
-      }
-
-      setLoading(false);
-    });
+    initAuth();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      (async () => {
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
 
-      if (currentUser) {
-        const adminStatus = await checkIsAdmin();
-        setIsAdmin(adminStatus);
-      } else {
-        setIsAdmin(false);
-      }
+        if (currentUser) {
+          const adminStatus = await checkIsAdmin();
+          setIsAdmin(adminStatus);
+        } else {
+          setIsAdmin(false);
+        }
+      })();
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  async function initAuth() {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+
+      if (currentUser) {
+        const adminStatus = await checkIsAdmin();
+        setIsAdmin(adminStatus);
+      }
+    } catch (error) {
+      console.error('Error initializing auth:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!user) return;
