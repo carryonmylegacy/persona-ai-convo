@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Home, FileText, Users, BookOpen, Settings, LogOut, Brain, Shield } from 'lucide-react';
-import PersonaView from './components/PersonaView';
 import ChatInterface from './components/ChatInterface';
 import CategoryProgress from './components/CategoryProgress';
 import ResetSession from './components/ResetSession';
-import TestMode from './components/TestMode';
 import { Auth } from './components/Auth';
 import AdminDashboard from './components/AdminDashboard';
 import { supabase } from './lib/supabase';
