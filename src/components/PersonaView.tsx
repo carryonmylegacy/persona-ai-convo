@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Sparkles } from 'lucide-react';
+import { Send, Sparkles, Mic, MicOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Message {
@@ -19,16 +19,31 @@ export default function PersonaView({ sessionId }: PersonaViewProps) {
   const [loading, setLoading] = useState(false);
   const [currentCategory, setCurrentCategory] = useState<any>(null);
   const [categoryProgress, setCategoryProgress] = useState<any>(null);
+  const [allCategories, setAllCategories] = useState<any[]>([]);
+  const [allProgress, setAllProgress] = useState<any[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recognition, setRecognition] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     loadMessages();
     loadConversationState();
+    loadAllCategories();
+    loadAllProgress();
+    initializeSpeechRecognition();
   }, [sessionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+    }
+  }, [input]);
 
   async function loadMessages() {
     const { data } = await supabase
@@ -43,6 +58,65 @@ export default function PersonaView({ sessionId }: PersonaViewProps) {
       if (data.length === 0) {
         await sendInitialGreeting();
       }
+    }
+  }
+
+  async function loadAllCategories() {
+    const { data } = await supabase
+      .from('category_buckets')
+      .select('*')
+      .order('order_index', { ascending: true });
+
+    if (data) {
+      setAllCategories(data);
+    }
+  }
+
+  async function loadAllProgress() {
+    const { data } = await supabase
+      .from('session_category_progress')
+      .select('*')
+      .eq('session_id', sessionId);
+
+    if (data) {
+      setAllProgress(data);
+    }
+  }
+
+  function initializeSpeechRecognition() {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+      const recognitionInstance = new SpeechRecognition();
+      recognitionInstance.continuous = false;
+      recognitionInstance.interimResults = false;
+      recognitionInstance.lang = 'en-US';
+
+      recognitionInstance.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput(prev => prev + (prev ? ' ' : '') + transcript);
+      };
+
+      recognitionInstance.onend = () => {
+        setIsRecording(false);
+      };
+
+      recognitionInstance.onerror = () => {
+        setIsRecording(false);
+      };
+
+      setRecognition(recognitionInstance);
+    }
+  }
+
+  function toggleRecording() {
+    if (!recognition) return;
+
+    if (isRecording) {
+      recognition.stop();
+      setIsRecording(false);
+    } else {
+      recognition.start();
+      setIsRecording(true);
     }
   }
 
@@ -165,6 +239,7 @@ Let's start with something fundamental: What would you say are your top prioriti
 
     await analyzeUserResponse(userMessage);
     await updateProgress();
+    await loadAllProgress();
     setLoading(false);
   }
 
@@ -288,10 +363,31 @@ Let's start with something fundamental: What would you say are your top prioriti
     }
   }
 
+  const getTotalQuestionsAsked = () => {
+    return allProgress.reduce((sum, p) => sum + p.questions_asked, 0);
+  };
+
+  const getTotalTargetQuestions = () => {
+    return allCategories.reduce((sum, c) => sum + (c.target_questions || 15), 0);
+  };
+
+  const getProgressPercentage = () => {
+    const total = getTotalTargetQuestions();
+    if (total === 0) return 0;
+    return Math.min((getTotalQuestionsAsked() / total) * 100, 100);
+  };
+
+  const getCategoryProgressPercentage = (categoryId: string) => {
+    const progress = allProgress.find(p => p.category_id === categoryId);
+    const category = allCategories.find(c => c.id === categoryId);
+    if (!progress || !category) return 0;
+    return Math.min((progress.questions_asked / category.target_questions) * 100, 100);
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full">
       <div className="border-b border-[var(--carry-on-medium-blue)] bg-[var(--carry-on-dark-blue)] px-8 py-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold text-white">Building Your Digital Corpus</h1>
             {currentCategory && (
@@ -308,6 +404,54 @@ Let's start with something fundamental: What would you say are your top prioriti
               </span>
             </div>
           )}
+        </div>
+
+        <div className="relative">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-[var(--carry-on-gray)]">Overall Progress</span>
+            <span className="text-sm font-semibold text-white">{Math.round(getProgressPercentage())}%</span>
+          </div>
+          <div className="relative h-3 bg-[var(--carry-on-medium-blue)] rounded-full overflow-hidden">
+            <div
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-[var(--carry-on-accent-blue)] to-[var(--carry-on-yellow)] transition-all duration-500"
+              style={{ width: `${getProgressPercentage()}%` }}
+            />
+            {allCategories.map((category, index) => {
+              const prevCategories = allCategories.slice(0, index);
+              const prevQuestions = prevCategories.reduce((sum, c) => sum + (c.target_questions || 15), 0);
+              const position = (prevQuestions / getTotalTargetQuestions()) * 100;
+
+              return (
+                <div
+                  key={category.id}
+                  className="absolute top-0 h-full w-0.5 bg-[var(--carry-on-dark-blue)]"
+                  style={{ left: `${position}%` }}
+                  title={`${category.name}: ${getCategoryProgressPercentage(category.id).toFixed(0)}%`}
+                />
+              );
+            })}
+          </div>
+          <div className="flex justify-between mt-1">
+            {allCategories.map((category) => {
+              const progress = getCategoryProgressPercentage(category.id);
+              const isCompleted = progress >= 100;
+              const isCurrent = currentCategory?.id === category.id;
+
+              return (
+                <div
+                  key={category.id}
+                  className="flex flex-col items-center"
+                  style={{ width: `${((category.target_questions || 15) / getTotalTargetQuestions()) * 100}%` }}
+                >
+                  <div className={`w-2 h-2 rounded-full mt-1 ${
+                    isCompleted ? 'bg-[var(--carry-on-yellow)]' :
+                    isCurrent ? 'bg-[var(--carry-on-accent-blue)] animate-pulse' :
+                    'bg-[var(--carry-on-gray)]'
+                  }`} />
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -346,16 +490,37 @@ Let's start with something fundamental: What would you say are your top prioriti
 
       <div className="border-t border-[var(--carry-on-medium-blue)] bg-[var(--carry-on-dark-blue)] p-6">
         <div className="max-w-3xl mx-auto">
-          <div className="flex gap-4">
-            <input
-              type="text"
+          <div className="flex gap-4 items-end">
+            <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && !loading && handleSend()}
-              placeholder="Share your thoughts..."
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !loading) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="Share your thoughts... (Shift+Enter for new line)"
               disabled={loading}
-              className="flex-1 px-6 py-4 bg-[var(--carry-on-medium-blue)] border border-[var(--carry-on-medium-blue)] rounded-xl text-white placeholder-[var(--carry-on-gray)] focus:outline-none focus:ring-2 focus:ring-[var(--carry-on-accent-blue)] disabled:opacity-50"
+              rows={1}
+              className="flex-1 px-6 py-4 bg-[var(--carry-on-medium-blue)] border border-[var(--carry-on-medium-blue)] rounded-xl text-white placeholder-[var(--carry-on-gray)] focus:outline-none focus:ring-2 focus:ring-[var(--carry-on-accent-blue)] disabled:opacity-50 resize-none overflow-hidden min-h-[56px] max-h-[200px]"
+              style={{ height: 'auto' }}
             />
+            {recognition && (
+              <button
+                onClick={toggleRecording}
+                disabled={loading}
+                className={`px-6 py-4 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isRecording
+                    ? 'bg-red-500 text-white animate-pulse'
+                    : 'bg-[var(--carry-on-medium-blue)] text-[var(--carry-on-gray)] hover:text-white'
+                }`}
+                title={isRecording ? 'Stop recording' : 'Start voice input'}
+              >
+                {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+              </button>
+            )}
             <button
               onClick={handleSend}
               disabled={loading || !input.trim()}
