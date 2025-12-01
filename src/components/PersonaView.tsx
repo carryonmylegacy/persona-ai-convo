@@ -163,74 +163,60 @@ Let's start with something fundamental: What would you say are your top prioriti
       setMessages(prev => [...prev, assistantMsg]);
     }
 
+    await analyzeUserResponse(userMessage);
     await updateProgress();
     setLoading(false);
   }
 
-  async function generateResponse(userMessage: string): Promise<string> {
-    const allMessages = await supabase
-      .from('chat_messages')
-      .select('role, content')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: true });
-
-    const conversationHistory = allMessages.data || [];
-
-    const categoryContext = currentCategory
-      ? `Current exploration area: ${currentCategory.name} - ${currentCategory.description}`
-      : '';
-
-    const progressInfo = categoryProgress
-      ? `Questions in this category: ${categoryProgress.questions_asked}/${currentCategory?.target_questions || 15}`
-      : '';
-
-    const systemPrompt = `You are a thoughtful AI companion helping someone build their digital legacy. Your role is to:
-
-1. Have natural, engaging conversations about life, values, beliefs, and experiences
-2. Ask thoughtful follow-up questions that deepen understanding
-3. Be empathetic and non-judgmental
-4. Help explore topics thoroughly before moving on
-5. Recognize when a topic has been adequately covered
-
-${categoryContext}
-${progressInfo}
-
-Guidelines:
-- Ask ONE clear question at a time
-- Build on previous responses naturally
-- Acknowledge and validate their sharing
-- When they've answered 12-15 questions in a category, gently transition to the next topic area
-- Keep responses concise but warm (2-4 sentences plus one question)`;
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...conversationHistory.map(m => ({ role: m.role, content: m.content })),
-      { role: 'user', content: userMessage }
-    ];
-
+  async function analyzeUserResponse(userMessage: string) {
     try {
-      const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-response`;
+
+      await fetch(apiUrl, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_XAI_API_KEY}`
         },
         body: JSON.stringify({
-          model: 'grok-beta',
-          messages: messages,
-          temperature: 0.7,
-          max_tokens: 300
+          session_id: sessionId,
+          user_message: userMessage,
+          category_id: currentCategory?.id
+        })
+      });
+    } catch (error) {
+      console.error('Error analyzing response:', error);
+    }
+  }
+
+  async function generateResponse(userMessage: string): Promise<string> {
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-question`;
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          user_message: userMessage,
+          category_id: currentCategory?.id,
+          questions_asked: categoryProgress?.questions_asked || 0
         })
       });
 
       if (!response.ok) {
-        throw new Error('Grok API error');
+        const errorText = await response.text();
+        console.error('Edge function error:', errorText);
+        throw new Error('Edge function error');
       }
 
       const data = await response.json();
-      return data.choices[0].message.content;
+      return data.question || data.next_question || "Thank you for sharing that. Could you tell me more about what that means to you?";
     } catch (error) {
-      console.error('Error calling Grok:', error);
+      console.error('Error generating response:', error);
       return "Thank you for sharing that. Could you tell me more about what that means to you?";
     }
   }
