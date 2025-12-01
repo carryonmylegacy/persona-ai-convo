@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Home, FileText, Users, BookOpen, Settings, LogOut, Brain, Shield } from 'lucide-react';
+import { Home, FileText, Users, BookOpen, Settings, LogOut, Brain, Shield, BarChart3, User as UserIcon } from 'lucide-react';
 import ChatInterface from './components/ChatInterface';
 import CategoryProgress from './components/CategoryProgress';
+import PersonaProfile from './components/PersonaProfile';
 import ResetSession from './components/ResetSession';
 import { Auth } from './components/Auth';
 import AdminDashboard from './components/AdminDashboard';
@@ -13,7 +14,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [activeView, setActiveView] = useState<'dashboard' | 'corpus' | 'documents' | 'beneficiaries' | 'action-guide' | 'settings' | 'admin'>('corpus');
+  const [activeView, setActiveView] = useState<'dashboard' | 'corpus' | 'persona' | 'progress' | 'documents' | 'beneficiaries' | 'action-guide' | 'settings' | 'admin'>('corpus');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [progressPercentage, setProgressPercentage] = useState(0);
 
@@ -163,6 +164,30 @@ function App() {
           </button>
 
           <button
+            onClick={() => setActiveView('persona')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              activeView === 'persona'
+                ? 'bg-[var(--carry-on-medium-blue)] text-white'
+                : 'text-[var(--carry-on-gray)] hover:bg-[var(--carry-on-medium-blue)] hover:text-white'
+            }`}
+          >
+            <UserIcon size={20} />
+            <span className="font-medium">Persona Profile</span>
+          </button>
+
+          <button
+            onClick={() => setActiveView('progress')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              activeView === 'progress'
+                ? 'bg-[var(--carry-on-medium-blue)] text-white'
+                : 'text-[var(--carry-on-gray)] hover:bg-[var(--carry-on-medium-blue)] hover:text-white'
+            }`}
+          >
+            <BarChart3 size={20} />
+            <span className="font-medium">Category Progress</span>
+          </button>
+
+          <button
             onClick={() => setActiveView('documents')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
               activeView === 'documents'
@@ -241,6 +266,26 @@ function App() {
       <div className="flex-1 flex flex-col">
         {activeView === 'corpus' && (
           <ChatInterface />
+        )}
+
+        {activeView === 'persona' && sessionId && (
+          <PersonaProfile sessionId={sessionId} />
+        )}
+
+        {activeView === 'progress' && (
+          <div className="flex-1 p-8 overflow-y-auto">
+            <div className="max-w-4xl mx-auto">
+              <h1 className="text-3xl font-bold text-white mb-2">Category Progress</h1>
+              <p className="text-[var(--carry-on-gray)] mb-8">Track your journey through each exploration area</p>
+              {sessionId ? (
+                <CategoryProgress sessionId={sessionId} />
+              ) : (
+                <div className="text-center text-[var(--carry-on-gray)] py-12">
+                  No active session. Start a conversation to begin tracking progress.
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {activeView === 'dashboard' && (
